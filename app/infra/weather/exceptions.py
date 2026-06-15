@@ -1,0 +1,2 @@
+class WeatherClientError(RuntimeError):
+    pass
