@@ -27,6 +27,9 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+# Ambiguous-cyrillic/latin homoglyph warnings (strings/docstrings/comments) are
+# false positives for this multilingual app (Russian UI strings, multilingual cities).
+ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

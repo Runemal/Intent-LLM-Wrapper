@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from app.api.routes import router as api_router
 from app.core.config import Settings, get_settings
 from app.core.container import Container
-from app.infra.llm.openrouter_client import LLMClientError
+from app.infra.llm.client import LLMClientError
 from app.ui.chat import build_chat_ui
 
 
@@ -37,7 +37,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def llm_error_handler(_request: Request, exc: LLMClientError) -> JSONResponse:
         return JSONResponse(status_code=502, content={"detail": str(exc)})
 
-    chat_ui = build_chat_ui(api_base_url=str(resolved_settings.internal_api_base_url))
+    chat_ui = build_chat_ui(
+        api_base_url=str(resolved_settings.internal_api_base_url),
+        request_timeout_seconds=resolved_settings.chat_request_timeout_seconds,
+    )
     return gr.mount_gradio_app(app, chat_ui, path="/chat")
 
 

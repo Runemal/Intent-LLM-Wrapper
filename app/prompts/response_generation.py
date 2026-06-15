@@ -1,18 +1,20 @@
 from jinja2 import Template
 
-from app.schemas.intent import DialogMessage, IntentAnalysisLLMResponse
+from app.schemas.intent import DialogMessage, IntentSegment
 
 
 def response_generation_prompt(
     *,
     query: str,
     history: list[DialogMessage],
-    intent_analysis: IntentAnalysisLLMResponse,
+    intent_analysis: IntentSegment,
+    language: str,
 ) -> str:
     template_string = """\
 ### Intent analysis result
 
 intent: {{ intent_analysis.intent.value }}
+language: {{ language }}
 confidence: {{ intent_analysis.confidence }}
 reasoning: {{ intent_analysis.reasoning }}
 weather_location: {{ intent_analysis.weather_location }}
@@ -20,6 +22,8 @@ weather_location: {{ intent_analysis.weather_location }}
 ### Current user request
 
 {{ query }}
+
+Respond in: {{ language }}
 
 ### Dialogue history
 
@@ -36,4 +40,5 @@ No previous messages.
         query=query,
         history=history,
         intent_analysis=intent_analysis,
+        language=language,
     ).strip()

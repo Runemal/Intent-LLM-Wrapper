@@ -1,53 +1,67 @@
 # Intent LLM Wrapper
 
-FastAPI service for intent classification via OpenRouter using the OpenAI-compatible API.
+FastAPI service that splits a user request into semantic units, classifies each, and
+answers per a strict intent policy — in the user's language. LLM calls go through one
+of three OpenAI-compatible providers (OpenRouter / Yandex Cloud / Xiaomi MiMo).
+Weather uses Open-Meteo. A Gradio chat UI is served at `/chat`.
+
+> Полная техническая документация: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> Для получения $2 на баланс MiMo воспользуйтесь промокодом Y95BZJ при регистрации https://platform.xiaomimimo.com?ref=Y95BZJ
+
 
 ## Features
 
-- `POST /api/v1/message` analyzes the current user request with dialogue history.
+- `POST /api/v1/message` analyzes the current request with dialogue history and returns
+  per-segment classification plus the final answer.
+- **Segmentation:** a multi-intent request is split into 1–5 semantic units; each is
+  classified independently, and an overall intent is derived (`mixed` when they differ).
+- **Multi-provider LLM:** select `openrouter` / `yandex` / `mimo` via `LLM_PROVIDER`.
+- **Multilingual:** answers, weather descriptions, and refusals are produced in the
+  user's language. Cities are recognized in any language/script and geocoded
+  (Москва→Moscow, Warszawa→Warsaw). Multiple cities and descriptive references
+  ("capital of Zimbabwe"→Harare) are supported.
+- Intent classes (per segment): `weather`, `technical_question`, `small_talk`, `other`;
+  overall may also be `mixed`. Humor→`small_talk`, math/arithmetic→`technical_question`.
 - `GET /health` returns service health.
 - `GET /chat` serves a Gradio chat UI.
-- Prompt builder lives in `app/prompts/intent_analysis.py`.
-- Structured output is parsed through the OpenAI SDK with a Pydantic schema.
-- Intent classes are `weather`, `technical_question`, `small_talk`, and `other`.
-- Weather requests call Open-Meteo geocoding and forecast APIs.
 
 ## Request Pipeline
 
-Every user message is handled in a deterministic sequence:
+1. **Intent analysis** (one LLM call) returns structured segments: each has `text`,
+   `intent`, `language`, `confidence`, `reasoning`, `weather_location`.
+2. **Per-segment policy** (segments processed in parallel):
+   - `weather`: resolve/normalize the location → Open-Meteo (geocoding + forecast) →
+     LLM-formatted localized description. A separate segment is created per requested city.
+   - `technical_question` / `small_talk`: a second LLM call generates the answer in the
+     user's language.
+   - `other`: a localized fixed refusal (no LLM — safe for adversarial content).
+3. **Overall** is computed deterministically (intent = unanimous class or `mixed`,
+   confidence = min across segments) and the API returns the joined `answer` plus
+   per-segment detail.
 
-1. Intent analysis LLM call returns structured data only:
-   `intent`, `confidence`, `reasoning`, and `weather_location`.
-2. The service applies intent policy:
-   - `weather`: call Open-Meteo using `weather_location`.
-   - `technical_question` and `small_talk`: make a second LLM call to generate the final answer.
-   - `other`: return a fixed policy response without a second generation call.
-3. The API returns the final user-facing `answer` plus intent metadata.
-
-Unsupported `other` requests always return:
-
-```text
-I can tell you about weather, technology, and keep up a little conversation. I do not discuss other topics.
-```
+Unsupported (`other`) requests return a localized refusal, e.g. (English):
+`I can tell you about weather, technology, and keep up a little conversation. I do not discuss other topics.`
 
 ## Local Run
 
 ```bash
 cp .env.example .env
-# fill OPENROUTER_API_KEY
+# set LLM_PROVIDER and the matching provider key (e.g. OPENROUTER_API_KEY)
 uv sync
 uv run uvicorn app.main:app --reload
 ```
 
-API: `http://localhost:8000`
-Chat UI: `http://localhost:8000/chat`
+API: `http://localhost:8000` · Chat UI: `http://localhost:8000/chat`
 
 ## Docker
 
 ```bash
-cp .env.example .env
+cp .env.example .env   # set LLM_PROVIDER + provider key
 docker compose up --build
 ```
+
+Switching provider or credentials only needs `docker compose up -d` (no rebuild);
+rebuild (`--build`) is required when code changes.
 
 ## Example Request
 
@@ -55,7 +69,10 @@ docker compose up --build
 curl -X POST http://localhost:8000/api/v1/message \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "What is the weather in Warsaw?",
+    "query": "Какая погода в Москве и столице Японии?",
     "history": []
   }'
 ```
+
+Returns `intent`, `confidence`, `answer` (localized, weather for both cities), and a
+`segments` array with per-unit classification.

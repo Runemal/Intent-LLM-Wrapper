@@ -4,7 +4,7 @@ import httpx
 ChatHistory = list[dict[str, str]]
 
 
-def build_chat_ui(api_base_url: str) -> gr.Blocks:
+def build_chat_ui(api_base_url: str, *, request_timeout_seconds: float = 120.0) -> gr.Blocks:
     async def submit_message(
         message: str,
         history: ChatHistory,
@@ -13,7 +13,9 @@ def build_chat_ui(api_base_url: str) -> gr.Blocks:
             return "", history, history
 
         api_history = _normalize_history(history)
-        async with httpx.AsyncClient(base_url=api_base_url, timeout=60) as client:
+        async with httpx.AsyncClient(
+            base_url=api_base_url, timeout=request_timeout_seconds
+        ) as client:
             response = await client.post(
                 "/api/v1/message",
                 json={"query": message, "history": api_history[-20:]},
